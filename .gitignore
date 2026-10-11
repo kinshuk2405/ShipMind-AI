@@ -20,3 +20,7 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Generated data-quality experiment files
+data/processed/shipments_cleaned.csv
+data/processed/shipments_messy.csv
