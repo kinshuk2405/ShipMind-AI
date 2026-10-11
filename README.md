@@ -83,31 +83,41 @@ streamlit run app.py
 python -m pytest tests/ -v
 ```
 
-## Initial Evaluation Results
+## Model Evaluation Results
 
-The initial experiment used a stratified 80/20 train-test split of 3,000 synthetic shipments.
+The latest experiment used 3,000 synthetic shipment records, split into training, validation, and test sets.
 
-### ETA Regression
+- **Training set:** 1,800 shipments
+- **Validation set:** 600 shipments
+- **Final test set:** 600 shipments
 
-| Model             | MAE (days) | RMSE (days) |    R² |
-| ----------------- | ---------: | ----------: | ----: |
-| Linear Regression |      0.449 |       0.661 | 0.991 |
-| Random Forest     |      0.478 |       0.711 | 0.989 |
+Models were selected using validation data. The selected models were then refitted on the combined training and validation data and evaluated on the held-out test set.
 
-Linear Regression performed better on this particular split.
+### ETA Regression — Linear Regression
 
-### Delay Classification
+| Metric                         | Final Test Result |
+| ------------------------------ | ----------------: |
+| Mean Absolute Error (MAE)      |       10.78 hours |
+| Root Mean Squared Error (RMSE) |       15.87 hours |
+| R² Score                       |            0.9906 |
 
-| Metric      | Constant-rate baseline | Logistic Regression |
-| ----------- | ---------------------: | ------------------: |
-| Accuracy    |                 54.17% |              70.17% |
-| F1 score    |                  0.703 |               0.719 |
-| Brier score |                 0.2483 |              0.1989 |
-| Log loss    |                 0.6897 |              0.5846 |
+Linear Regression was selected for ETA prediction based on the validation evaluation.
 
-At a 0.50 classification threshold, Logistic Regression achieved 73.4% precision and approximately 70.5% recall for the delayed class.
+### Delay Classification — Logistic Regression
 
-These are initial synthetic-data results. They have not been validated against real shipments.
+The classifier predicts whether a shipment will experience a delay exceeding 24 hours.
+
+| Metric      | Final Test Result |
+| ----------- | ----------------: |
+| Accuracy    |             70.7% |
+| Precision   |             71.8% |
+| Recall      |             75.4% |
+| F1 Score    |             0.736 |
+| Brier Score |            0.1972 |
+
+The results indicate that the classifier identifies delayed shipments with a recall of approximately 75.4% on the synthetic test set.
+
+**Evaluation caveat:** These results are based on synthetic shipment data generated for this prototype. They demonstrate performance under simulated conditions and have not been validated against real-world shipment records.
 
 ## Limitations
 

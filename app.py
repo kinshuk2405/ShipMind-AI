@@ -235,30 +235,54 @@ shipment = test_df.loc[
 
 st.sidebar.divider()
 
-st.sidebar.header("2. Try a what-if scenario")
+
+st.sidebar.header("2. Scenario planner")
 
 st.sidebar.caption(
-    "Imagine reducing the extra time spent at certain stages. "
-    "These sliders explore hypothetical improvements."
+    "Choose a hypothetical intervention to compare its modeled impact."
 )
 
-sea_reduction = st.sidebar.slider(
-    "Reduce extra time during sea travel",
-    min_value=0,
-    max_value=80,
-    value=20,
-    step=5,
-    format="%d%%",
+scenario_presets = {
+    "Current plan": (0, 0),
+    "Improve sea transit": (20, 0),
+    "Improve destination processing": (0, 20),
+    "Combined intervention": (20, 20),
+    "Custom scenario": None,
+}
+
+scenario_choice = st.sidebar.selectbox(
+    "Select an intervention",
+    list(scenario_presets.keys()),
 )
 
-destination_reduction = st.sidebar.slider(
-    "Reduce extra time at destination",
-    min_value=0,
-    max_value=80,
-    value=20,
-    step=5,
-    format="%d%%",
+if scenario_choice == "Custom scenario":
+    sea_reduction = st.sidebar.slider(
+        "Reduce sea-stage excess time",
+        min_value=0,
+        max_value=80,
+        value=20,
+        step=5,
+        format="%d%%",
+    )
+
+    destination_reduction = st.sidebar.slider(
+        "Reduce destination-stage excess time",
+        min_value=0,
+        max_value=80,
+        value=20,
+        step=5,
+        format="%d%%",
+    )
+else:
+    sea_reduction, destination_reduction = (
+        scenario_presets[scenario_choice]
+    )
+
+st.sidebar.caption(
+    f"Assumptions: sea transit −{sea_reduction}%, "
+    f"destination processing −{destination_reduction}%."
 )
+
 
 st.sidebar.divider()
 
@@ -403,61 +427,76 @@ st.write(
     "does not prove what caused a real-world delay."
 )
 
-trace = pd.DataFrame(baseline["trace"])
 
-stage_names = {
-    "Origin handling": "Starting-point handling",
-    "Sea transit": "Sea travel",
-    "Destination processing": "Destination processing",
-    "Final handling": "Final hand-off",
-}
+baseline_trace = pd.DataFrame(baseline["trace"])
+scenario_trace = pd.DataFrame(scenario["trace"])
 
-trace["Stage"] = (
-    trace["stage"]
-    .map(stage_names)
-    .fillna(trace["stage"])
+stage_comparison = baseline_trace[
+    ["stage", "baseline_excess_hours"]
+].merge(
+    scenario_trace[["stage", "scenario_excess_hours"]],
+    on="stage",
 )
 
-trace["Extra time (hours)"] = trace["new_stage_delay_hours"]
+stage_names = {
+    "Origin handling": "Origin handling",
+    "Sea transit": "Sea transit",
+    "Destination processing": "Destination processing",
+    "Final handling": "Final handling",
+}
 
-stage_fig = px.scatter(
-    trace,
-    x="Extra time (hours)",
-    y="Stage",
-    size="Extra time (hours)",
-    text="Extra time (hours)",
-    title="Extra time by shipment stage",
-    labels={
-        "Stage": "",
-        "Extra time (hours)": "Extra time (hours)",
-    },
+stage_comparison["Stage"] = (
+    stage_comparison["stage"]
+    .map(stage_names)
+    .fillna(stage_comparison["stage"])
+)
+
+stage_comparison = stage_comparison.rename(
+    columns={
+        "baseline_excess_hours": "Before intervention (hours)",
+        "scenario_excess_hours": "After intervention (hours)",
+    }
+)
+
+chart_data = stage_comparison.melt(
+    id_vars="Stage",
+    value_vars=[
+        "Before intervention (hours)",
+        "After intervention (hours)",
+    ],
+    var_name="Scenario",
+    value_name="Extra time (hours)",
+)
+
+stage_fig = px.bar(
+    chart_data,
+    x="Stage",
+    y="Extra time (hours)",
+    color="Scenario",
+    barmode="group",
+    title="Stage-level impact of the selected scenario",
+    labels={"Stage": "", "Extra time (hours)": "Excess time (hours)"},
     template=plotly_template,
 )
 
-stage_fig.update_traces(
-    texttemplate="%{text:.1f} h",
-    textposition="middle right",
-)
-
 stage_fig.update_layout(
-    showlegend=False,
-    margin={"l": 10, "r": 40, "t": 45, "b": 10},
+    margin={"l": 10, "r": 10, "t": 45, "b": 10},
+    legend_title_text="",
 )
 
 st.plotly_chart(stage_fig, use_container_width=True)
+
 
 col1, col2 = st.columns(2)
 
 col1.metric(
     "Schedule allowance",
     f"{baseline['schedule_buffer_hours']:.1f} hours",
-    help="Extra time planned into the schedule to absorb some delays.",
 )
 
 col2.metric(
-    "Extra time remaining after allowance",
-    f"{baseline['baseline_delay_after_buffer_hours']:.1f} hours",
-    help="Modelled delay remaining after applying the schedule allowance.",
+    "Remaining delay after intervention",
+    f"{scenario['delay_after_buffer_hours']:.1f} hours",
 )
 
 
@@ -466,77 +505,191 @@ col2.metric(
 # =========================================================
 
 st.divider()
-st.markdown("## 3. What if we reduced extra time?")
+st.markdown("## 3. Scenario impact")
 
 st.write(
-    "The sliders apply assumed percentage reductions to extra time "
-    "during sea travel and destination processing."
-)
-
-modeled_hours_saved = max(
-    0.0,
-    baseline["baseline_delay_after_buffer_hours"]
-    - scenario["delay_after_buffer_hours"],
+    "Compare the modeled journey duration before and after the "
+    "selected hypothetical intervention."
 )
 
 col1, col2, col3 = st.columns(3)
 
 col1.metric(
-    "Before changes",
-    f"{baseline['baseline_actual_eta_days'] * 24:.1f} hours",
+    "Baseline modeled ETA",
+    f"{baseline['baseline_modeled_eta_hours']:.1f} hours",
 )
 
 col2.metric(
-    "After scenario changes",
-    f"{scenario['scenario_eta_days'] * 24:.1f} hours",
+    "Scenario modeled ETA",
+    f"{scenario['scenario_eta_hours']:.1f} hours",
 )
 
 col3.metric(
-    "Extra time reduced",
-    f"{modeled_hours_saved:.1f} hours",
+    "Modeled time saved",
+    f"{scenario['hours_saved_vs_original']:.1f} hours",
 )
 
-scenario_df = pd.DataFrame({
-    "Scenario": ["Before changes", "After changes"],
-    "Extra time after allowance (hours)": [
-        baseline["baseline_delay_after_buffer_hours"],
-        scenario["delay_after_buffer_hours"],
-    ],
-})
+col1, col2 = st.columns(2)
 
-scenario_fig = px.line(
-    scenario_df,
-    x="Scenario",
-    y="Extra time after allowance (hours)",
-    markers=True,
-    text="Extra time after allowance (hours)",
-    title="Extra time before and after hypothetical changes",
+col1.metric(
+    "Baseline delay after allowance",
+    f"{baseline['baseline_delay_after_buffer_hours']:.1f} hours",
+)
+
+col2.metric(
+    "Scenario delay after allowance",
+    f"{scenario['delay_after_buffer_hours']:.1f} hours",
+)
+
+st.info(
+    f"Selected scenario: {scenario_choice}. "
+    f"Assumed reduction in sea-stage excess time: {sea_reduction}%. "
+    f"Assumed reduction in destination-stage excess time: "
+    f"{destination_reduction}%."
+)
+
+st.caption(
+    "These are simulated results based on assumed reductions in "
+    "stage-level excess durations. The scenario ETA is not a new "
+    "prediction from the trained ETA model, and modeled savings "
+    "are not guaranteed real-world outcomes."
+)
+
+
+
+# =========================================================
+# AUTOMATIC INTERVENTION RANKING
+# =========================================================
+
+st.markdown("### Which intervention has the greatest modeled impact?")
+
+st.write(
+    "ShipMind AI compares a consistent set of hypothetical "
+    "interventions for the selected shipment."
+)
+
+candidate_scenarios = [
+    {
+        "Intervention": "Current plan",
+        "Sea reduction (%)": 0,
+        "Destination reduction (%)": 0,
+    },
+    {
+        "Intervention": "Improve sea transit",
+        "Sea reduction (%)": 20,
+        "Destination reduction (%)": 0,
+    },
+    {
+        "Intervention": "Improve destination processing",
+        "Sea reduction (%)": 0,
+        "Destination reduction (%)": 20,
+    },
+    {
+        "Intervention": "Combined intervention",
+        "Sea reduction (%)": 20,
+        "Destination reduction (%)": 20,
+    },
+]
+
+ranking_rows = []
+
+for candidate in candidate_scenarios:
+    result = propagate_delay(
+        shipment,
+        sea_improvement=candidate["Sea reduction (%)"] / 100,
+        destination_improvement=(
+            candidate["Destination reduction (%)"] / 100
+        ),
+    )
+
+    ranking_rows.append({
+        "Intervention": candidate["Intervention"],
+        "Sea reduction (%)": candidate["Sea reduction (%)"],
+        "Destination reduction (%)": (
+            candidate["Destination reduction (%)"]
+        ),
+        "Modeled ETA (hours)": result["scenario_eta_hours"],
+        "Remaining delay (hours)": result["delay_after_buffer_hours"],
+        "Modeled hours saved": result["hours_saved_vs_original"],
+    })
+
+ranking_df = pd.DataFrame(ranking_rows)
+
+# Rank the hypothetical options by modeled time saved.
+ranking_df = ranking_df.sort_values(
+    "Modeled hours saved",
+    ascending=False,
+).reset_index(drop=True)
+
+ranking_df.insert(
+    0,
+    "Rank",
+    range(1, len(ranking_df) + 1),
+)
+
+st.dataframe(
+    ranking_df.style.format({
+        "Sea reduction (%)": "{:.0f}%",
+        "Destination reduction (%)": "{:.0f}%",
+        "Modeled ETA (hours)": "{:.2f}",
+        "Remaining delay (hours)": "{:.2f}",
+        "Modeled hours saved": "{:.2f}",
+    }),
+    use_container_width=True,
+    hide_index=True,
+)
+
+# Highlight the highest-ranked scenario.
+best = ranking_df.iloc[0]
+
+if best["Intervention"] != "Current plan":
+    st.success(
+        f"Highest modeled impact: {best['Intervention']} — "
+        f"{best['Modeled hours saved']:.2f} hours saved "
+        "under the stated assumptions."
+    )
+else:
+    st.info(
+        "No intervention produces modeled time savings for this "
+        "shipment under the current assumptions."
+    )
+
+ranking_fig = px.bar(
+    ranking_df.sort_values("Modeled hours saved", ascending=True),
+    x="Modeled hours saved",
+    y="Intervention",
+    orientation="h",
+    text="Modeled hours saved",
+    title="Modeled time saved by intervention",
     labels={
-        "Scenario": "",
-        "Extra time after allowance (hours)": "Extra time (hours)",
+        "Modeled hours saved": "Hours saved",
+        "Intervention": "",
     },
     template=plotly_template,
 )
 
-scenario_fig.update_traces(
-    texttemplate="%{text:.1f} h",
-    textposition="top center",
-    line={"width": 3},
-    marker={"size": 12},
+ranking_fig.update_traces(
+    texttemplate="%{text:.2f} h",
+    textposition="outside",
 )
 
-scenario_fig.update_layout(
+ranking_fig.update_layout(
     showlegend=False,
-    margin={"l": 10, "r": 10, "t": 45, "b": 10},
+    margin={"l": 10, "r": 55, "t": 45, "b": 10},
 )
 
-st.plotly_chart(scenario_fig, use_container_width=True)
+st.plotly_chart(
+    ranking_fig,
+    use_container_width=True,
+)
 
 st.caption(
-    "This is a simplified simulation. It assumes the selected reductions "
-    "happen; it does not prove that a real-world action would achieve "
-    "the same result."
+    "Ranking is based on assumed reductions in excess stage durations, "
+    "not learned intervention effects. It identifies the largest "
+    "modeled time saving, not necessarily the cheapest or most feasible "
+    "real-world action."
 )
+
 
 
 # =========================================================
