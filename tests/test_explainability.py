@@ -1,4 +1,5 @@
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -11,7 +12,7 @@ from src.explainability import (
 
 @pytest.fixture(scope="module")
 def shipment():
-    """Load one real project sample for explanation tests."""
+    """Load a representative shipment from the project dataset."""
     df = pd.read_csv("data/processed/shipments.csv")
 
     assert not df.empty, "Shipment dataset must not be empty."
@@ -19,27 +20,37 @@ def shipment():
     return df.iloc[0]
 
 
-def test_coefficient_explanation(shipment):
-    """Verify the existing coefficient-based explanation."""
-    result = explain_delay_risk(shipment)
+def assert_valid_explanation(result, method_name):
+    """Check the basic structure and numerical validity of an explanation."""
+    assert isinstance(result, pd.DataFrame), (
+        f"{method_name} must return a pandas DataFrame."
+    )
+    assert not result.empty, f"{method_name} returned an empty explanation."
+    assert len(result.columns) > 0, (
+        f"{method_name} must return at least one column."
+    )
 
-    assert isinstance(result, pd.DataFrame)
-    assert not result.empty
-    assert result.head(5).shape[0] > 0
+    numeric_columns = result.select_dtypes(include=np.number)
+
+    assert not numeric_columns.empty, (
+        f"{method_name} should contain numerical explanation values."
+    )
+
+    assert np.isfinite(numeric_columns.to_numpy()).all(), (
+        f"{method_name} contains NaN or infinite numerical values."
+    )
+
+
+def test_coefficient_explanation(shipment):
+    result = explain_delay_risk(shipment)
+    assert_valid_explanation(result, "Coefficient explanation")
 
 
 def test_shap_explanation(shipment):
-    """Verify the SHAP explanation returns usable results."""
     result = explain_delay_risk_shap(shipment)
-
-    assert isinstance(result, pd.DataFrame)
-    assert not result.empty
-    assert result.head(5).shape[0] > 0
+    assert_valid_explanation(result, "SHAP explanation")
 
 
 def test_lime_explanation(shipment):
-    """Verify the LIME explanation returns usable results."""
     result = explain_delay_risk_lime(shipment)
-
-    assert isinstance(result, pd.DataFrame)
-    assert not result.empty
+    assert_valid_explanation(result, "LIME explanation")

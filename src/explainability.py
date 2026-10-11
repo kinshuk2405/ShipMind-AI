@@ -63,18 +63,41 @@ def load_explainer_data():
     return model, preprocessor, classifier, background, feature_names
 
 
-def transform_shipment(shipment, preprocessor):
-    """Transform one shipment using the fitted preprocessing pipeline."""
-    row = pd.DataFrame([
-        {feature: shipment[feature] for feature in FEATURES}
-    ])
 
+def transform_shipment(shipment, preprocessor):
+    """Validate and transform one shipment using the fitted pipeline."""
+
+    missing_features = [
+        feature for feature in FEATURES
+        if feature not in shipment.index
+    ]
+
+    if missing_features:
+        raise ValueError(
+            f"Shipment is missing required features: {missing_features}"
+        )
+
+    row_data = {feature: shipment[feature] for feature in FEATURES}
+
+    missing_values = [
+        feature
+        for feature, value in row_data.items()
+        if pd.isna(value)
+    ]
+
+    if missing_values:
+        raise ValueError(
+            f"Shipment contains missing values: {missing_values}"
+        )
+
+    row = pd.DataFrame([row_data])
     transformed = preprocessor.transform(row)
 
     if hasattr(transformed, "toarray"):
         transformed = transformed.toarray()
 
     return transformed
+
 
 
 def explain_delay_risk(shipment: pd.Series) -> pd.DataFrame:
@@ -159,6 +182,14 @@ def explain_delay_risk_lime(
     num_features: int = 10,
 ) -> pd.DataFrame:
     """Return a local LIME explanation for one shipment."""
+    
+    if (
+        isinstance(num_features, bool)
+        or not isinstance(num_features, int)
+        or num_features < 1
+    ):
+        raise ValueError("num_features must be a positive integer.")
+
     _, preprocessor, classifier, background, feature_names = (
         load_explainer_data()
     )
