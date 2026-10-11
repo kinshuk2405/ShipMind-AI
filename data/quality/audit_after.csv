@@ -1,0 +1,11 @@
+Check,Count
+Total rows,3000
+Duplicate shipment IDs,0
+Rows with missing values,836
+Total missing cells,960
+Invalid negative values: base_transit_days,0
+Invalid negative values: weather_sensitivity,0
+Invalid negative values: departure_delay_hours,0
+Invalid negative values: weather_severity,0
+Invalid negative values: congestion_level,0
+Invalid negative values: planned_transit_days,0
