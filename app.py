@@ -14,7 +14,13 @@ from sklearn.metrics import (
     recall_score,
 )
 
-from src.explainability import explain_delay_risk
+from src.explainability import (
+    explain_delay_risk,
+    explain_delay_risk_shap,
+    explain_delay_risk_lime,
+    get_global_shap_importance,
+)
+
 from src.propagation import propagate_delay
 
 
@@ -691,41 +697,42 @@ st.caption(
 )
 
 
-
 # =========================================================
-# 10. MODEL EXPLANATION
+# 10. MODEL EXPLAINABILITY — SHAP AND LIME
 # =========================================================
 
 st.divider()
-
-st.markdown("## 4. Which information influenced the risk estimate?")
-
+st.markdown("## 4. Why did the model flag this shipment?")
 st.write(
-    "This chart shows signals that pushed the model's estimate up or down. "
-    "The values are on a model influence scale, not percentages, and do "
-    "not prove that a signal caused a delay."
+    "Explore which inputs influenced the delay-risk classifier. "
+    "SHAP explains contributions relative to a background baseline; "
+    "LIME provides a local approximation around the selected shipment."
 )
 
-explanation = explain_delay_risk(shipment).head(8).copy()
+st.info(
+    "These explanations describe the model's behavior on synthetic data. "
+    "They do not establish real-world causes of shipment delays."
+)
 
 
 def friendly_name(name):
     label = (
-        name.replace("num__", "")
-        .replace("cat__", "")
+        str(name)
+        .replace("numeric__", "")
+        .replace("categorical__", "")
         .replace("_", " ")
     )
 
     replacements = {
-        "departure delay hours": "Delay before departure",
-        "weather severity": "Weather severity (simulated level)",
-        "congestion level": "Congestion (simulated level)",
-        "customs risk": "Customs risk (simulated setting)",
-        "weather sensitivity": "Route sensitivity to weather",
-        "planned transit days": "Planned journey duration feature",
-        "base transit days": "Typical journey duration feature",
-        "route id": "Route identifier",
-        "origin": "Starting point",
+        "departure delay hours": "Departure delay",
+        "weather severity": "Weather severity",
+        "congestion level": "Congestion level",
+        "customs risk": "Customs risk",
+        "weather sensitivity": "Weather sensitivity",
+        "planned transit days": "Planned transit duration",
+        "base transit days": "Typical transit duration",
+        "route id": "Route",
+        "origin": "Origin",
         "destination": "Destination",
     }
 
@@ -735,48 +742,153 @@ def friendly_name(name):
     return label
 
 
-explanation["Information signal"] = (
-    explanation["feature"].map(friendly_name)
+tab_global, tab_shap, tab_lime = st.tabs(
+    ["Global SHAP", "Selected shipment: SHAP", "Selected shipment: LIME"]
 )
 
-explanation["Direction"] = explanation["contribution"].apply(
-    lambda value: (
-        "Pushes risk estimate up"
-        if value > 0
-        else (
-            "Pushes risk estimate down"
-            if value < 0
-            else "Little influence"
-        )
+# ---------------- GLOBAL SHAP ----------------
+
+with tab_global:
+    st.markdown("### Which features influence predictions most?")
+    st.caption(
+        "Mean absolute SHAP values across a reproducible sample. "
+        "Larger values indicate greater average contribution magnitude."
     )
-)
 
-explanation = explanation.sort_values("contribution")
+    try:
+        global_importance = get_global_shap_importance(
+            sample_size=200
+        ).head(12).copy()
 
-influence_fig = px.scatter(
-    explanation,
-    x="contribution",
-    y="Information signal",
-    color="Direction",
-    size=explanation["contribution"].abs(),
-    title="Signals influencing the model's risk estimate",
-    labels={
-        "contribution": "Model influence (relative scale)",
-        "Information signal": "",
-    },
-    template=plotly_template,
-)
+        global_importance["Feature"] = (
+            global_importance["feature"].map(friendly_name)
+        )
 
-influence_fig.update_layout(
-    margin={"l": 10, "r": 10, "t": 45, "b": 10},
-)
+        global_fig = px.bar(
+            global_importance.sort_values("mean_absolute_shap"),
+            x="mean_absolute_shap",
+            y="Feature",
+            orientation="h",
+            title="Global feature importance using SHAP",
+            labels={
+                "mean_absolute_shap": "Mean absolute SHAP value",
+                "Feature": "",
+            },
+            template=plotly_template,
+        )
 
-st.plotly_chart(influence_fig, use_container_width=True)
+        global_fig.update_layout(
+            showlegend=False,
+            margin={"l": 10, "r": 10, "t": 45, "b": 10},
+        )
 
-st.caption(
-    "The influence scale is not a percentage. These are associations "
-    "learned from synthetic data, not proof of real-world causes."
-)
+        st.plotly_chart(global_fig, use_container_width=True)
+
+        st.caption(
+            "Global importance measures contribution magnitude, not "
+            "whether a feature generally increases or decreases risk."
+        )
+
+    except Exception as exc:
+        st.error(f"Could not calculate global SHAP importance: {exc}")
+
+
+# ---------------- LOCAL SHAP ----------------
+
+with tab_shap:
+    st.markdown("### What pushed this shipment's risk estimate?")
+    st.caption(
+        f"Shipment: {selected_id}. Positive SHAP values push the "
+        "model output toward higher delay risk; negative values push it lower."
+    )
+
+    try:
+        shap_result = explain_delay_risk_shap(shipment).head(12).copy()
+        shap_result["Feature"] = shap_result["feature"].map(friendly_name)
+        shap_result["Direction"] = shap_result["shap_value"].apply(
+            lambda value: (
+                "Higher modeled risk" if value > 0
+                else "Lower modeled risk" if value < 0
+                else "Neutral"
+            )
+        )
+
+        shap_fig = px.bar(
+            shap_result.sort_values("shap_value"),
+            x="shap_value",
+            y="Feature",
+            color="Direction",
+            orientation="h",
+            title="Local SHAP contributions",
+            labels={
+                "shap_value": "SHAP value (model output scale)",
+                "Feature": "",
+                "Direction": "",
+            },
+            template=plotly_template,
+        )
+
+        shap_fig.update_layout(
+            margin={"l": 10, "r": 10, "t": 45, "b": 10},
+        )
+
+        st.plotly_chart(shap_fig, use_container_width=True)
+        st.dataframe(
+            shap_result[["Feature", "shap_value", "Direction"]],
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    except Exception as exc:
+        st.error(f"Could not calculate the SHAP explanation: {exc}")
+
+
+# ---------------- LOCAL LIME ----------------
+
+with tab_lime:
+    st.markdown("### A second local explanation")
+    st.caption(
+        "LIME approximates the classifier around this shipment. "
+        "Its weights are not directly comparable to SHAP values."
+    )
+
+    try:
+        lime_result = explain_delay_risk_lime(
+            shipment,
+            num_features=10,
+        ).copy()
+
+        lime_result["Feature"] = lime_result["feature"].map(friendly_name)
+
+        lime_fig = px.bar(
+            lime_result.sort_values("lime_weight"),
+            x="lime_weight",
+            y="Feature",
+            color="direction",
+            orientation="h",
+            title="LIME local feature weights",
+            labels={
+                "lime_weight": "LIME weight (local approximation)",
+                "Feature": "",
+                "direction": "",
+            },
+            template=plotly_template,
+        )
+
+        lime_fig.update_layout(
+            margin={"l": 10, "r": 10, "t": 45, "b": 10},
+        )
+
+        st.plotly_chart(lime_fig, use_container_width=True)
+
+        st.dataframe(
+            lime_result[["Feature", "lime_weight", "direction"]],
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    except Exception as exc:
+        st.error(f"Could not calculate the LIME explanation: {exc}")
 
 
 # =========================================================
