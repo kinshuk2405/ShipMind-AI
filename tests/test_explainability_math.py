@@ -124,3 +124,52 @@ def test_coefficient_contributions_match_model_coefficients():
     )
 
     assert np.array_equal(actual_directions, expected_directions)
+
+
+def test_lime_local_fidelity_score_is_valid():
+    import pandas as pd
+
+    from src.explainability import (
+        DATA_PATH,
+        FEATURES,
+        load_explainer_data,
+        transform_shipment,
+    )
+    from lime.lime_tabular import LimeTabularExplainer
+
+    (
+        model,
+        preprocessor,
+        classifier,
+        background,
+        feature_names,
+    ) = load_explainer_data()
+
+    df = pd.read_csv(DATA_PATH)
+    shipment = df.iloc[0]
+    transformed = transform_shipment(shipment, preprocessor)
+
+    explainer = LimeTabularExplainer(
+        training_data=np.asarray(background),
+        feature_names=list(feature_names),
+        class_names=["Within 24 hours", "Over 24 hours"],
+        mode="classification",
+        discretize_continuous=True,
+        random_state=42,
+    )
+
+    class_index = list(classifier.classes_).index(1)
+
+    explanation = explainer.explain_instance(
+        data_row=transformed[0],
+        predict_fn=classifier.predict_proba,
+        labels=(class_index,),
+        num_features=min(10, len(feature_names)),
+    )
+
+    assert np.isfinite(explanation.score)
+    assert -1.0 <= explanation.score <= 1.0
+
+    local_prediction = np.asarray(explanation.local_pred).reshape(-1)
+
+    assert np.isfinite(local_prediction).all()
