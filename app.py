@@ -296,9 +296,9 @@ alert_threshold = st.sidebar.slider(
     "Flag a shipment when delay chance reaches",
     min_value=0.20,
     max_value=0.80,
-    value=0.40,
+    value=0.50,
     step=0.05,
-    format="%.0f%%",
+    format="percent",
     help=(
         "Lower settings flag more shipments. This may catch more delays, "
         "but can also create more false alarms."
